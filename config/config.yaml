@@ -1,0 +1,7 @@
+application:
+  base_url: "https://opensource-demo.orangehrmlive.com/"
+  timeout: 10000
+browser:
+  name: "chromium"
+  headless: true
+  tracing: true

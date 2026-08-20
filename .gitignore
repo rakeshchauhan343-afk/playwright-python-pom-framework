@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Local configuration and secrets
+.env
+
+# Test artifacts
+reports/*
+!reports/.gitkeep
+!reports/html/
+reports/html/*
+!reports/html/.gitkeep
+!reports/allure-results/
+reports/allure-results/*
+!reports/allure-results/.gitkeep
+!reports/allure-report/
+reports/allure-report/*
+!reports/allure-report/.gitkeep
+screenshots/*
+!screenshots/.gitkeep
+traces/*
+!traces/.gitkeep
+
+# IDE
+.vscode/
+.idea/
