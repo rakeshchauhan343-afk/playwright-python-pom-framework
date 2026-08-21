@@ -109,26 +109,36 @@ Clean generated output before a fresh run (PowerShell):
 Remove-Item reports/html/*, reports/allure-results/*, reports/allure-report/*, screenshots/*, traces/* -Recurse -Force -ErrorAction SilentlyContinue
 ```
 
-Generate both reports in one pytest run:
+Generate the required HTML report and Allure results in one pytest run:
 
 ```powershell
-python -m pytest tests/ui/test_login.py `
-    --html=reports/html/report.html `
-    --self-contained-html `
-    --alluredir=reports/allure-results `
-    --clean-alluredir
+python -m pytest -v --html=reports/html/report.html --self-contained-html
 ```
 
-The terminal summary and pytest-html report provide total, passed, failed, skipped, error, and duration information. Environment metadata includes browser, execution mode, application URL, tracing, Python, and operating system.
+To generate both report formats together:
+
+```powershell
+python -m pytest -v --html=reports/html/report.html --self-contained-html `
+    --alluredir=reports/allure-results --clean-alluredir
+```
+
+Open the self-contained HTML report directly from `reports/html/report.html`. It includes the dashboard totals and pass percentage, per-test status/module/browser/environment/time, captured steps and logs, failure tracebacks, screenshots, and Playwright trace links. Set `ENVIRONMENT` to label a run, for example `$env:ENVIRONMENT="staging"`.
 
 Generate and open the Allure HTML report:
 
 ```powershell
-allure generate reports/allure-results -o reports/allure-report --clean
+Remove-Item reports/allure-report/* -Recurse -Force -ErrorAction SilentlyContinue
+allure generate reports/allure-results -o reports/allure-report
 allure open reports/allure-report
 ```
 
 The Allure commands require the separate Allure command-line tool. If `allure` is not recognized, install Allure Report and its Java prerequisite, then reopen the terminal before running those commands. The Python adapter generates `reports/allure-results`; the CLI generates `reports/allure-report`.
+
+Open the generated Allure report with:
+
+```powershell
+allure open reports/allure-report
+```
 
 The framework uses its existing custom Playwright fixtures and remains compatible with pytest and Playwright. Passwords are masked in terminal output and are not added as report parameters. Keep real credentials outside source control; Playwright traces can contain page data and should be treated as sensitive artifacts.
 

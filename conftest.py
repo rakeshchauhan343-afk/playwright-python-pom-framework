@@ -1,7 +1,11 @@
+import html
 import json
+import os
 import platform
 import re
 import time
+from datetime import datetime
+from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
@@ -20,9 +24,32 @@ from utils.console_reporter import print_test_result
 from utils.logger import get_logger
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+playwright_version = version("playwright")
+environment_name = os.getenv("ENVIRONMENT", "demo")
 logger = get_logger(__name__)
 SESSION_START: float | None = None
 REPORT_COUNTS = {"passed": 0, "failed": 0, "skipped": 0, "errors": 0}
+COUNTED_NODEIDS: set[str] = set()
+DEFAULT_REPORT_STEPS = {
+    "test_user_can_log_in_to_orangehrm": (
+        "Step 1 - Open OrangeHRM",
+        "Step 2 - Enter Username",
+        "Step 3 - Enter Password",
+        "Step 4 - Click Login",
+        "Step 5 - Verify Dashboard",
+    ),
+    "test_admin_user_search_and_open_add_user": (
+        "Step 1 - Login",
+        "Step 2 - Open Admin",
+        "Step 3 - Enter Username",
+        "Step 4 - Select User Role",
+        "Step 5 - Enter Employee Name",
+        "Step 6 - Select Status",
+        "Step 7 - Click Search",
+        "Step 8 - Click Add",
+        "Step 9 - Verify Add User Page",
+    ),
+}
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -73,6 +100,9 @@ def allure_test_metadata(request: pytest.FixtureRequest) -> None:
 def pytest_sessionstart(session: pytest.Session) -> None:
     global SESSION_START
     SESSION_START = time.perf_counter()
+    COUNTED_NODEIDS.clear()
+    for key in REPORT_COUNTS:
+        REPORT_COUNTS[key] = 0
     results_dir = session.config.getoption("--alluredir", default=None)
     if not results_dir:
         return
@@ -116,26 +146,83 @@ def pytest_configure(config: pytest.Config) -> None:
                 "Application URL": _safe_url(base_url),
                 "Playwright tracing": tracing,
                 "Python": platform.python_version(),
+                "Pytest": pytest.__version__,
+                "Playwright": playwright_version,
                 "Operating system": platform.platform(),
+                "Environment": environment_name,
             }
         )
+
+
+def pytest_html_report_title(report: Any) -> None:
+    report.title = "Playwright Python Automation Test Report"
 
 
 def pytest_html_results_summary(
     prefix: list[Any], summary: list[Any], postfix: list[Any]
 ) -> None:
+    prefix.append(
+        "<style>"
+        ".qa-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));"
+        "gap:10px;margin:18px 0}.qa-summary div{background:#f4f7fa;border-left:4px solid #64748b;"
+        "padding:12px 14px;border-radius:4px}.qa-summary strong,.qa-summary span{display:block}."
+        "qa-summary span{font-size:1.45em;font-weight:700;margin-top:4px}.qa-summary .passed{border-color:#16803c}."
+        ".qa-summary .failed{border-color:#c62828}.qa-summary .skipped{border-color:#b7791f}."
+        ".qa-summary .error{border-color:#7c3aed}.qa-steps{white-space:pre-line;min-width:260px}."
+        ".qa-failure{margin-top:12px;padding:12px;border:1px solid #c62828;background:#fff7f7}."
+        ".qa-failure pre{white-space:pre-wrap;overflow:auto;margin-bottom:0}"
+        "</style>"
+    )
     passed = REPORT_COUNTS["passed"]
     failed = REPORT_COUNTS["failed"]
     skipped = REPORT_COUNTS["skipped"]
     errors = REPORT_COUNTS["errors"]
     total = passed + failed + skipped + errors
+    pass_percentage = (passed / total * 100) if total else 0
+    duration = time.perf_counter() - SESSION_START if SESSION_START else 0.0
     summary.append(
-        f"<p><strong>Framework summary:</strong> {total} total, {passed} passed, "
-        f"{failed} failed, {skipped} skipped, {errors} errors.</p>"
+        '<section class="qa-summary">'
+        f'<div><strong>Total Tests</strong><span>{total}</span></div>'
+        f'<div class="passed"><strong>Passed</strong><span>{passed}</span></div>'
+        f'<div class="failed"><strong>Failed</strong><span>{failed}</span></div>'
+        f'<div class="skipped"><strong>Skipped</strong><span>{skipped}</span></div>'
+        f'<div class="error"><strong>Error</strong><span>{errors}</span></div>'
+        f'<div><strong>Total Execution Time</strong><span>{duration:.2f}s</span></div>'
+        f'<div><strong>Pass Percentage</strong><span>{pass_percentage:.1f}%</span></div>'
+        "</section>"
     )
 
 
+def pytest_html_results_table_header(cells: list[Any]) -> None:
+    cells.insert(1, "<th class='sortable'>Test Status</th>")
+    cells.insert(2, "<th class='sortable'>Test Module</th>")
+    cells.insert(3, "<th class='sortable'>Browser</th>")
+    cells.insert(4, "<th class='sortable'>Environment</th>")
+    cells.insert(5, "<th>Execution Date/Time</th>")
+    cells.insert(6, "<th>Test Steps</th>")
+
+
+def pytest_html_results_table_html(report: pytest.TestReport, data: list[str]) -> None:
+    if report.failed:
+        data.append(
+            "<div class='qa-failure'>"
+            f"<strong>Failure details</strong><pre>{html.escape(report.longreprtext)}</pre>"
+            "</div>"
+        )
+
+
 def pytest_html_results_table_row(report: pytest.TestReport, cells: list[Any]) -> None:
+    test_module = Path(str(report.fspath)).name if report.fspath else ""
+    browser_name = getattr(report, "browser_name", "")
+    environment = getattr(report, "environment_name", environment_name)
+    execution_time = getattr(report, "execution_datetime", "")
+    steps = getattr(report, "report_steps", "")
+    cells.insert(1, f"<td>{html.escape(report.outcome.title())}</td>")
+    cells.insert(2, f"<td>{html.escape(test_module)}</td>")
+    cells.insert(3, f"<td>{html.escape(browser_name)}</td>")
+    cells.insert(4, f"<td>{html.escape(environment)}</td>")
+    cells.insert(5, f"<td>{html.escape(execution_time)}</td>")
+    cells.insert(6, f"<td class='qa-steps'>{steps or 'No captured steps'}</td>")
     for path, label, artifact_type in getattr(report, "report_artifacts", []):
         if path.exists():
             if artifact_type == "image":
@@ -198,6 +285,9 @@ def context(request: pytest.FixtureRequest, browser: Browser) -> BrowserContext:
     report = getattr(request.node, "rep_call", None)
     if tracing_enabled and report and report.failed:
         trace_path = PROJECT_ROOT / "traces" / f"{_safe_name(request.node.nodeid)}.zip"
+        if getattr(request.node, "trace_saved", False):
+            browser_context.close()
+            return
         try:
             browser_context.tracing.stop(path=str(trace_path))
             logger.info("Saved trace: %s", trace_path)
@@ -218,7 +308,7 @@ def page(request: pytest.FixtureRequest, context: BrowserContext) -> Page:
     yield browser_page
 
     report = getattr(request.node, "rep_call", None)
-    if report and report.failed:
+    if report and report.failed and not getattr(request.node, "screenshot_saved", False):
         (PROJECT_ROOT / "screenshots").mkdir(parents=True, exist_ok=True)
         screenshot_path = PROJECT_ROOT / "screenshots" / f"{_safe_name(request.node.nodeid)}.png"
         try:
@@ -254,22 +344,93 @@ def user_data() -> dict[str, Any]:
         return json.load(data_file)
 
 
-def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[Any]) -> None:
-    report = pytest.TestReport.from_item_and_call(item, call)
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[Any]):
+    outcome = yield
+    report = outcome.get_result()
     setattr(item, f"rep_{call.when}", report)
+    if call.when == "call":
+        report.browser_name = item.config.getoption("--pom-browser")
+        report.environment_name = environment_name
+        report.execution_datetime = datetime.now().astimezone().strftime(
+            "%Y-%m-%d %H:%M:%S %Z"
+        )
+        report.report_steps = _steps_html(getattr(report, "capstdout", ""))
+        if not report.report_steps:
+            report.report_steps = "<br>".join(
+                html.escape(step)
+                for step in DEFAULT_REPORT_STEPS.get(item.name, ())
+            )
+        captured_output = getattr(report, "capstdout", "")
+        report.extras = getattr(report, "extras", [])
+        if captured_output:
+            report.extras.append(extras.text(captured_output, name="Test steps and logs"))
+        framework_log = PROJECT_ROOT / "reports" / "framework.log"
+        if framework_log.exists():
+            report.extras.append(
+                extras.text(framework_log.read_text(encoding="utf-8"), name="Framework log")
+            )
+        if item.nodeid not in COUNTED_NODEIDS:
+            _count_report(report)
+            COUNTED_NODEIDS.add(item.nodeid)
+        if report.failed:
+            _capture_failure_artifacts(item, report)
+    elif report.failed and item.nodeid not in COUNTED_NODEIDS:
+        REPORT_COUNTS["errors"] += 1
+        COUNTED_NODEIDS.add(item.nodeid)
+    elif report.skipped and item.nodeid not in COUNTED_NODEIDS:
+        REPORT_COUNTS["skipped"] += 1
+        COUNTED_NODEIDS.add(item.nodeid)
     if call.when == "call":
         setattr(item, "rep_call", report)
         print_test_result(item.name, report.passed)
-        if report.passed:
-            REPORT_COUNTS["passed"] += 1
-        elif report.skipped:
-            REPORT_COUNTS["skipped"] += 1
-        else:
-            REPORT_COUNTS["failed"] += 1
 
 
 def _safe_name(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", value)
+
+
+def _steps_html(output: str) -> str:
+    steps = []
+    for line in output.splitlines():
+        match = re.match(r"\s*\[STEP\s+(\d+)\]\s+(.+)", line)
+        if match:
+            steps.append(f"Step {match.group(1)} - {html.escape(match.group(2))}")
+    return "<br>".join(steps)
+
+
+def _count_report(report: pytest.TestReport) -> None:
+    if report.passed:
+        REPORT_COUNTS["passed"] += 1
+    elif report.skipped:
+        REPORT_COUNTS["skipped"] += 1
+    elif report.failed:
+        REPORT_COUNTS["failed"] += 1
+
+
+def _capture_failure_artifacts(item: pytest.Item, report: pytest.TestReport) -> None:
+    page = item.funcargs.get("page")
+    if page is not None:
+        screenshot_path = PROJECT_ROOT / "screenshots" / f"{_safe_name(item.nodeid)}.png"
+        screenshot_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            page.screenshot(path=str(screenshot_path), full_page=True)
+            _attach_file(screenshot_path, "Failure screenshot", allure.attachment_type.PNG)
+            _record_artifact(report, screenshot_path, "Failure screenshot", "image")
+            item.screenshot_saved = True
+        except Exception as error:
+            logger.warning("Could not save failure screenshot: %s", error)
+
+    context = item.funcargs.get("context")
+    if context is not None and item.config.getoption("--pom-tracing") == "on":
+        trace_path = PROJECT_ROOT / "traces" / f"{_safe_name(item.nodeid)}.zip"
+        try:
+            context.tracing.stop(path=str(trace_path))
+            _attach_file(trace_path, "Playwright trace", allure.attachment_type.ZIP)
+            _record_artifact(report, trace_path, "Playwright trace", "trace")
+            item.trace_saved = True
+        except Exception as error:
+            logger.warning("Could not save Playwright trace: %s", error)
 
 
 def _safe_url(value: str) -> str:
