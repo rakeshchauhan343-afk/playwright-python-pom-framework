@@ -5,6 +5,8 @@ from typing import Any
 import yaml
 from dotenv import load_dotenv
 
+from config.settings import ORANGEHRM_URL
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_ROOT / ".env")
 
@@ -28,7 +30,7 @@ def get_config(section: str, key: str, default: Any = None) -> Any:
 
 
 def get_base_url() -> str:
-    return str(os.getenv("BASE_URL", get_config("application", "base_url", "https://example.com")))
+    return ORANGEHRM_URL
 
 
 def get_timeout() -> int:

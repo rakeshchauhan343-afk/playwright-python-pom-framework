@@ -12,6 +12,9 @@ from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_
 from pytest_html import extras
 
 from pages.base_page import BasePage
+from pages.dashboard_page import DashboardPage
+from pages.login_page import LoginPage
+from config.settings import ORANGEHRM_PASSWORD, ORANGEHRM_URL, ORANGEHRM_USERNAME
 from utils.config_reader import get_base_url, get_timeout
 from utils.console_reporter import print_test_result
 from utils.logger import get_logger
@@ -226,6 +229,17 @@ def page(request: pytest.FixtureRequest, context: BrowserContext) -> Page:
         except Exception as error:
             logger.warning("Could not save failure screenshot: %s", error)
     browser_page.close()
+
+
+@pytest.fixture
+def logged_in_page(page: Page) -> Page:
+    login_page = LoginPage(page)
+    dashboard_page = DashboardPage(page)
+    with allure.step("Open OrangeHRM and log in"):
+        login_page.open(ORANGEHRM_URL)
+        login_page.login(ORANGEHRM_USERNAME, ORANGEHRM_PASSWORD)
+        dashboard_page.expect_loaded()
+    return page
 
 
 @pytest.fixture

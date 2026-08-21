@@ -47,6 +47,23 @@ Defaults are in `config/config.yaml`. Environment variables override them:
 
 Keep credentials outside source control. `.env` is ignored by Git and is provided only as a template.
 
+Create a local `.env` file in the project root with the centralized OrangeHRM settings:
+
+```dotenv
+ORANGEHRM_URL=https://opensource-demo.orangehrmlive.com/
+ORANGEHRM_USERNAME=Admin
+ORANGEHRM_PASSWORD=admin123
+```
+
+These values are loaded by `config/settings.py`. Tests should use the reusable `logged_in_page` fixture for flows that begin after authentication:
+
+```python
+def test_admin_user_search(logged_in_page, user_data):
+    admin_page = AdminPage(logged_in_page)
+```
+
+The fixture opens the configured URL, logs in through `LoginPage`, verifies the Dashboard, and reuses the existing `page` fixture for browser cleanup, screenshots, traces, and report attachments. Passwords are never added to reporting metadata or terminal output.
+
 ## Running tests
 
 Run the demo test headlessly in Chromium:
@@ -74,7 +91,7 @@ Override the target URL and tracing:
 python -m pytest -q --pom-base-url https://example.com --pom-tracing off
 ```
 
-The login test targets the OrangeHRM demo application configured in `config/config.yaml`. Credentials are loaded from `test_data/users.json`; keep real credentials outside source control.
+The login test targets the OrangeHRM demo application configured in `.env`. Admin search values are loaded from `test_data/users.json`; keep real credentials outside source control.
 
 ## Reports
 

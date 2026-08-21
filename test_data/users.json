@@ -1,6 +1,8 @@
 {
-  "orangehrm_user": {
-    "username": "Admin",
-    "password": "admin123"
+  "admin_search": {
+    "username": "Rakesh Chauhan",
+    "user_role": "Admin",
+    "employee_name": "Rakesh",
+    "status": "Enabled"
   }
 }
