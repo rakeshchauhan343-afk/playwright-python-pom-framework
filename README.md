@@ -78,29 +78,31 @@ The login test targets the OrangeHRM demo application configured in `config/conf
 
 ## Reports
 
-Generate a self-contained pytest HTML report:
+Generated output is kept in these locations:
+
+- `reports/html/report.html`: self-contained pytest-html report with status, duration, environment, and failure artifacts.
+- `reports/allure-results/`: raw Allure results with title, description, feature, story, severity, steps, parameters, and attachments.
+- `reports/allure-report/`: generated Allure HTML report.
+- `screenshots/`: failure screenshots.
+- `traces/`: Playwright trace ZIP files for failed tests.
+
+Clean generated output before a fresh run (PowerShell):
 
 ```powershell
-python -m pytest tests/ui/test_login.py --html=reports/html/report.html --self-contained-html
+Remove-Item reports/html/*, reports/allure-results/*, reports/allure-report/*, screenshots/*, traces/* -Recurse -Force -ErrorAction SilentlyContinue
 ```
 
-Generate both reports from one test run:
+Generate both reports in one pytest run:
 
 ```powershell
 python -m pytest tests/ui/test_login.py `
-	--html=reports/html/report.html `
-	--self-contained-html `
-	--alluredir=reports/allure-results `
-	--clean-alluredir
+    --html=reports/html/report.html `
+    --self-contained-html `
+    --alluredir=reports/allure-results `
+    --clean-alluredir
 ```
 
-The HTML report remains at `reports/html/report.html`. Allure results include the test title, feature, story, severity, six login steps, duration, browser parameters, application URL, and failure attachments when applicable.
-
-Generate raw Allure results:
-
-```powershell
-python -m pytest tests/ui/test_login.py --alluredir=reports/allure-results --clean-alluredir
-```
+The terminal summary and pytest-html report provide total, passed, failed, skipped, error, and duration information. Environment metadata includes browser, execution mode, application URL, tracing, Python, and operating system.
 
 Generate and open the Allure HTML report:
 
@@ -110,3 +112,35 @@ allure open reports/allure-report
 ```
 
 The Allure commands require the separate Allure command-line tool. If `allure` is not recognized, install Allure Report and its Java prerequisite, then reopen the terminal before running those commands. The Python adapter generates `reports/allure-results`; the CLI generates `reports/allure-report`.
+
+The framework uses its existing custom Playwright fixtures and remains compatible with pytest and Playwright. Passwords are masked in terminal output and are not added as report parameters. Keep real credentials outside source control; Playwright traces can contain page data and should be treated as sensitive artifacts.
+
+## Interactive test runner
+
+The project root contains `run_tests.ps1`, an interactive menu for the common pytest and reporting commands:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+.\run_tests.ps1
+```
+
+Select an option from the menu:
+
+1. Run all tests with `python -m pytest -v`.
+2. Run all tests headed with `python -m pytest -v --headed`.
+3. Run the headed OrangeHRM login test.
+4. Run the login test with Allure results.
+5. Generate `reports/allure-report` with the Allure CLI.
+6. Open the generated Allure report.
+7. Generate `reports/html/report.html` with pytest-html.
+8. Run the login test and generate both pytest-html and Allure results.
+9. Exit.
+
+The script reports clear errors when `python`/pytest or the `allure` command-line tool is unavailable. Install project dependencies and Playwright browsers before using the menu:
+
+```powershell
+python -m pip install -r requirements.txt
+python -m playwright install
+```
+
+The Allure generation and open options require the separate Allure Commandline tool and Java. The script runs from the project root, so all existing report paths remain unchanged.
