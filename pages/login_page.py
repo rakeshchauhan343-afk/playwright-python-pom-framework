@@ -12,14 +12,29 @@ class LoginPage(BasePage):
     def open(self, url: str) -> None:
         self.navigate(url)
 
+    def login_heading(self):
+        return self.page.get_by_role("heading", name="Login", exact=True)
+
+    def username_input(self):
+        return self.page.get_by_placeholder(self.USERNAME_PLACEHOLDER, exact=True)
+
+    def password_input(self):
+        return self.page.get_by_placeholder(self.PASSWORD_PLACEHOLDER, exact=True)
+
+    def login_button(self):
+        return self.page.get_by_role("button", name=self.LOGIN_BUTTON_NAME, exact=True)
+
+    def forgot_password_link(self):
+        return self.page.get_by_text("Forgot your password?", exact=True)
+
     def enter_username(self, username: str) -> None:
-        self.page.get_by_placeholder(self.USERNAME_PLACEHOLDER).fill(username)
+        self.username_input().fill(username)
 
     def enter_password(self, password: str) -> None:
-        self.page.get_by_placeholder(self.PASSWORD_PLACEHOLDER).fill(password)
+        self.password_input().fill(password)
 
     def submit(self) -> None:
-        self.page.get_by_role("button", name=self.LOGIN_BUTTON_NAME).click()
+        self.login_button().click()
 
     def login(self, username: str, password: str) -> None:
         self.enter_username(username)
