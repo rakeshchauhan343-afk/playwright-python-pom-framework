@@ -1,0 +1,127 @@
+name: Playwright Python CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: qa
+        type: choice
+        options:
+          - qa
+          - uat
+          - staging
+      suite:
+        description: Test selection
+        required: true
+        default: regression
+        type: choice
+        options:
+          - smoke
+          - api
+          - ui
+          - regression
+          - all
+  schedule:
+    - cron: "30 2 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: playwright-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PYTHON_VERSION: "3.12"
+  PLAYWRIGHT_BROWSERS_PATH: "${{ github.workspace }}/.playwright-browsers"
+  ENVIRONMENT: ${{ inputs.environment || vars.TEST_ENVIRONMENT || (github.event_name == 'schedule' && 'staging') || 'qa' }}
+
+jobs:
+  quality:
+    name: Quality checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run Ruff
+        run: ruff check api config pages tests utils
+      - name: Compile Python sources
+        run: python -m compileall -q api config pages tests utils conftest.py
+
+  tests:
+    name: ${{ github.event_name == 'pull_request' && 'Smoke tests' || 'Selected tests' }}
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: ${{ inputs.environment || vars.TEST_ENVIRONMENT || (github.event_name == 'schedule' && 'staging') || 'qa' }}
+    env:
+      BASE_URL: ${{ secrets.BASE_URL }}
+      ORANGEHRM_URL: ${{ secrets.ORANGEHRM_URL }}
+      ORANGEHRM_USERNAME: ${{ secrets.ORANGEHRM_USERNAME }}
+      ORANGEHRM_PASSWORD: ${{ secrets.ORANGEHRM_PASSWORD }}
+      TEST_MARKER: ${{ github.event_name == 'pull_request' && 'smoke or sanity' || github.event_name == 'schedule' && 'regression' || inputs.suite == 'smoke' && 'smoke or sanity' || inputs.suite == 'api' && 'api' || inputs.suite == 'ui' && 'ui' || inputs.suite == 'all' && 'not flaky' || inputs.suite == 'regression' && 'regression' || 'not flaky' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Run selected tests
+        run: >-
+          python -m pytest -n auto -m "${{ env.TEST_MARKER }}"
+          --reruns 1
+          --only-rerun "TimeoutError|net::ERR|TargetClosedError"
+          --pom-video on
+          --html=reports/html/report.html
+          --self-contained-html
+          --junitxml=reports/junit.xml
+          --alluredir=reports/allure-results
+          --clean-alluredir
+      - name: Upload JUnit and HTML reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-reports-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            reports/html/
+            reports/junit.xml
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-${{ github.run_id }}
+          if-no-files-found: warn
+          path: reports/allure-results/
+      - name: Upload failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failure-evidence-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            screenshots/
+            traces/
+            videos/
+            reports/diagnostics/
+            reports/framework.log

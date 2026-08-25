@@ -1,4 +1,5 @@
 import allure
+import pytest
 from playwright.sync_api import expect
 
 from pages.dashboard_page import DashboardPage
@@ -12,6 +13,10 @@ from utils.console_reporter import mask_secret, print_test_header, print_test_st
 @allure.severity(allure.severity_level.NORMAL)
 @allure.feature("Authentication")
 @allure.story("OrangeHRM Login")
+@pytest.mark.ui
+@pytest.mark.login
+@pytest.mark.smoke
+@pytest.mark.sanity
 def test_login_page_controls_are_available(page):
     """Verify the login page heading, controls, and recovery link."""
     print_test_header("OrangeHRM login page controls are available")
@@ -36,6 +41,11 @@ def test_login_page_controls_are_available(page):
 @allure.severity(allure.severity_level.CRITICAL)
 @allure.feature("Authentication")
 @allure.story("OrangeHRM Login")
+@pytest.mark.ui
+@pytest.mark.login
+@pytest.mark.smoke
+@pytest.mark.critical
+@pytest.mark.e2e
 def test_user_can_log_in_to_orangehrm(page):
     """Verify a valid OrangeHRM user reaches the Dashboard."""
     print_test_header("OrangeHRM user can log in")

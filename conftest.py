@@ -7,25 +7,32 @@ import time
 from datetime import datetime
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any
+from typing import Any, Generator
 
 import pytest
 import allure
 from pytest_metadata.plugin import metadata_key
-from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
+from playwright.sync_api import (
+    APIRequestContext,
+    Browser,
+    BrowserContext,
+    Page,
+    Playwright,
+    sync_playwright,
+)
 from pytest_html import extras
 
 from pages.base_page import BasePage
 from pages.dashboard_page import DashboardPage
 from pages.login_page import LoginPage
-from config.settings import ORANGEHRM_PASSWORD, ORANGEHRM_URL, ORANGEHRM_USERNAME
-from utils.config_reader import get_base_url, get_timeout
+from config.settings import ORANGEHRM_PASSWORD, ORANGEHRM_USERNAME
+from utils.config_reader import get_base_url, get_environment_name, get_timeout
 from utils.console_reporter import print_test_result
 from utils.logger import get_logger
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 playwright_version = version("playwright")
-environment_name = os.getenv("ENVIRONMENT", "demo")
+environment_name = get_environment_name()
 logger = get_logger(__name__)
 SESSION_START: float | None = None
 REPORT_COUNTS = {"passed": 0, "failed": 0, "skipped": 0, "errors": 0}
@@ -79,6 +86,19 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default="on",
         choices=("on", "off"),
         help="Capture Playwright traces for failed tests.",
+    )
+    group.addoption(
+        "--pom-video",
+        action="store",
+        default="off",
+        choices=("on", "off"),
+        help="Record videos and retain them for failed tests.",
+    )
+    group.addoption(
+        "--pom-refresh-auth",
+        action="store_true",
+        default=False,
+        help="Regenerate auth/storage_state.json before authenticated tests.",
     )
 
 
@@ -270,12 +290,142 @@ def browser(request: pytest.FixtureRequest, playwright_instance: Playwright) -> 
     instance.close()
 
 
+@pytest.fixture(scope="session")
+def auth_state(request: pytest.FixtureRequest, browser: Browser) -> Path:
+    """Reuse a valid state or create the canonical authenticated state."""
+    state_path = PROJECT_ROOT / "auth" / "storage_state.json"
+    base_url = request.config.getoption("--pom-base-url") or get_base_url()
+
+    refresh_requested = request.config.getoption("--pom-refresh-auth")
+    if not refresh_requested and _auth_state_is_valid(browser, base_url, state_path):
+        logger.info("Reusing authenticated browser state: %s", state_path)
+        return state_path
+
+    _create_auth_state(browser, base_url, state_path)
+    return state_path
+
+
+@pytest.fixture
+def api_request_context(request: pytest.FixtureRequest, playwright_instance: Playwright) -> Generator[APIRequestContext, None, None]:
+    base_url = request.config.getoption("--pom-base-url") or get_base_url()
+    request_context = playwright_instance.request.new_context(base_url=base_url)
+    yield request_context
+    request_context.dispose()
+
+
+@pytest.fixture
+def authenticated_api_request_context(
+    request: pytest.FixtureRequest,
+    playwright_instance: Playwright,
+    auth_state: Path,
+) -> Generator[APIRequestContext, None, None]:
+    base_url = request.config.getoption("--pom-base-url") or get_base_url()
+    request_context = playwright_instance.request.new_context(
+        base_url=base_url,
+        storage_state=str(auth_state),
+        extra_http_headers={"Accept": "application/json"},
+    )
+    yield request_context
+    request_context.dispose()
+
+
+@pytest.fixture
+def employee_api(authenticated_api_request_context: APIRequestContext):
+    from api.employee_api_client import EmployeeApiClient
+
+    return EmployeeApiClient(authenticated_api_request_context)
+
+
+@pytest.fixture
+def authenticated_page(
+    request: pytest.FixtureRequest,
+    browser: Browser,
+    auth_state: Path,
+) -> Generator[Page, None, None]:
+    """Provide a fresh page backed by the generated authenticated state."""
+    base_url = request.config.getoption("--pom-base-url") or get_base_url()
+    authenticated_context = browser.new_context(
+        base_url=base_url,
+        storage_state=str(auth_state),
+    )
+    authenticated_context.set_default_timeout(get_timeout())
+    authenticated_browser_page = authenticated_context.new_page()
+    authenticated_browser_page.goto(base_url, wait_until="domcontentloaded")
+    DashboardPage(authenticated_browser_page).expect_loaded()
+    yield authenticated_browser_page
+    authenticated_browser_page.close()
+    authenticated_context.close()
+
+
+@pytest.fixture
+def login_page(page: Page) -> LoginPage:
+    return LoginPage(page)
+
+
+@pytest.fixture
+def dashboard_page(page: Page) -> DashboardPage:
+    return DashboardPage(page)
+
+
+@pytest.fixture
+def pim_page(page: Page):
+    from pages.pim_page import PimPage
+
+    return PimPage(page)
+
+
+@pytest.fixture
+def mock_route(page: Page):
+    """Register a route that can fulfill, delay, continue, or abort requests."""
+    registered_patterns: list[str] = []
+
+    def register(
+        url_pattern: str,
+        *,
+        status: int = 200,
+        body: Any = None,
+        headers: dict[str, str] | None = None,
+        delay_ms: int = 0,
+        action: str = "fulfill",
+    ) -> None:
+        if action not in {"fulfill", "continue", "abort"}:
+            raise ValueError("action must be fulfill, continue, or abort")
+
+        def handler(route) -> None:
+            if action == "continue":
+                route.continue_()
+            elif action == "abort":
+                route.abort()
+            else:
+                if delay_ms:
+                    page.wait_for_timeout(delay_ms)
+                fulfill_kwargs: dict[str, Any] = {
+                    "status": status,
+                    "headers": headers or {"content-type": "application/json"},
+                }
+                if body is not None:
+                    fulfill_kwargs["json"] = body
+                route.fulfill(**fulfill_kwargs)
+
+        page.route(url_pattern, handler)
+        registered_patterns.append(url_pattern)
+
+    yield register
+    for pattern in registered_patterns:
+        page.unroute(pattern)
 @pytest.fixture
 def context(request: pytest.FixtureRequest, browser: Browser) -> BrowserContext:
     base_url = request.config.getoption("--pom-base-url") or get_base_url()
     (PROJECT_ROOT / "traces").mkdir(parents=True, exist_ok=True)
     (PROJECT_ROOT / "reports").mkdir(parents=True, exist_ok=True)
-    browser_context = browser.new_context(base_url=base_url)
+    video_enabled = request.config.getoption("--pom-video") == "on"
+    video_dir = PROJECT_ROOT / "videos"
+    video_dir.mkdir(parents=True, exist_ok=True)
+    video_files_before = set(video_dir.glob("*.webm"))
+    browser_context = browser.new_context(
+        base_url=base_url,
+        record_video_dir=str(video_dir) if video_enabled else None,
+    )
     browser_context.set_default_timeout(get_timeout())
     tracing_enabled = request.config.getoption("--pom-tracing") == "on"
     if tracing_enabled:
@@ -285,26 +435,42 @@ def context(request: pytest.FixtureRequest, browser: Browser) -> BrowserContext:
     report = getattr(request.node, "rep_call", None)
     if tracing_enabled and report and report.failed:
         trace_path = PROJECT_ROOT / "traces" / f"{_safe_name(request.node.nodeid)}.zip"
-        if getattr(request.node, "trace_saved", False):
-            browser_context.close()
-            return
-        try:
-            browser_context.tracing.stop(path=str(trace_path))
-            logger.info("Saved trace: %s", trace_path)
-            _attach_file(trace_path, "Playwright trace", allure.attachment_type.ZIP)
-            _record_artifact(report, trace_path, "Playwright trace", "trace")
-        except Exception as error:
-            logger.warning("Could not save Playwright trace: %s", error)
+        if not getattr(request.node, "trace_saved", False):
+            try:
+                browser_context.tracing.stop(path=str(trace_path))
+                logger.info("Saved trace: %s", trace_path)
+                _attach_file(trace_path, "Playwright trace", allure.attachment_type.ZIP)
+                _record_artifact(report, trace_path, "Playwright trace", "trace")
+            except Exception as error:
+                logger.warning("Could not save Playwright trace: %s", error)
     elif tracing_enabled:
         browser_context.tracing.stop()
     if report and report.failed:
         _attach_file(PROJECT_ROOT / "reports" / "framework.log", "Framework log", allure.attachment_type.TEXT)
     browser_context.close()
+    if report and report.failed and video_enabled:
+        for video_path in video_dir.glob("*.webm"):
+            if video_path not in video_files_before:
+                _attach_file(video_path, "Failure video", allure.attachment_type.WEBM)
+                _record_artifact(report, video_path, "Failure video", "video")
 
 
 @pytest.fixture
 def page(request: pytest.FixtureRequest, context: BrowserContext) -> Page:
     browser_page = context.new_page()
+    console_messages: list[str] = []
+    failed_requests: list[str] = []
+    browser_page.on(
+        "console",
+        lambda message: console_messages.append(f"[{message.type}] {message.text}"),
+    )
+    browser_page.on(
+        "requestfailed",
+        lambda failed_request: failed_requests.append(
+            f"{failed_request.method} {failed_request.url}"
+            f" - {failed_request.failure or 'unknown failure'}"
+        ),
+    )
     yield browser_page
 
     report = getattr(request.node, "rep_call", None)
@@ -318,6 +484,21 @@ def page(request: pytest.FixtureRequest, context: BrowserContext) -> Page:
             _record_artifact(report, screenshot_path, "Failure screenshot", "image")
         except Exception as error:
             logger.warning("Could not save failure screenshot: %s", error)
+    if report and report.failed and (console_messages or failed_requests):
+        diagnostics_path = PROJECT_ROOT / "reports" / "diagnostics" / (
+            f"{_safe_name(request.node.nodeid)}.txt"
+        )
+        diagnostics_path.parent.mkdir(parents=True, exist_ok=True)
+        diagnostics_path.write_text(
+            "Console messages:\n"
+            + ("\n".join(console_messages) or "None")
+            + "\n\nFailed requests:\n"
+            + ("\n".join(failed_requests) or "None")
+            + "\n",
+            encoding="utf-8",
+        )
+        _attach_file(diagnostics_path, "Console and network diagnostics", allure.attachment_type.TEXT)
+        _record_artifact(report, diagnostics_path, "Console and network diagnostics", "text")
     browser_page.close()
 
 
@@ -326,7 +507,7 @@ def logged_in_page(page: Page) -> Page:
     login_page = LoginPage(page)
     dashboard_page = DashboardPage(page)
     with allure.step("Open OrangeHRM and log in"):
-        login_page.open(ORANGEHRM_URL)
+        login_page.open(get_base_url())
         login_page.login(ORANGEHRM_USERNAME, ORANGEHRM_PASSWORD)
         dashboard_page.expect_loaded()
     return page
@@ -388,6 +569,48 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[Any]):
 
 def _safe_name(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", value)
+
+
+def _auth_state_is_valid(browser: Browser, base_url: str, state_path: Path) -> bool:
+    if not state_path.is_file():
+        return False
+
+    validation_context = None
+    try:
+        validation_context = browser.new_context(
+            base_url=base_url,
+            storage_state=str(state_path),
+        )
+        validation_context.set_default_timeout(get_timeout())
+        validation_page = validation_context.new_page()
+        validation_page.goto(base_url, wait_until="domcontentloaded")
+        DashboardPage(validation_page).expect_loaded()
+        return True
+    except Exception as error:
+        logger.info("Stored authentication is unavailable and will be refreshed: %s", error)
+        return False
+    finally:
+        if validation_context is not None:
+            validation_context.close()
+
+
+def _create_auth_state(browser: Browser, base_url: str, state_path: Path) -> None:
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = state_path.with_name(f"{state_path.stem}.{os.getpid()}.tmp.json")
+    auth_context = browser.new_context(base_url=base_url)
+    auth_context.set_default_timeout(get_timeout())
+    try:
+        auth_page = auth_context.new_page()
+        with allure.step("Generate authenticated Playwright storage state"):
+            LoginPage(auth_page).open(base_url)
+            LoginPage(auth_page).login(ORANGEHRM_USERNAME, ORANGEHRM_PASSWORD)
+            DashboardPage(auth_page).expect_loaded()
+            auth_context.storage_state(path=str(temporary_path))
+        os.replace(temporary_path, state_path)
+        logger.info("Saved authenticated browser state: %s", state_path)
+    finally:
+        auth_context.close()
+        temporary_path.unlink(missing_ok=True)
 
 
 def _steps_html(output: str) -> str:

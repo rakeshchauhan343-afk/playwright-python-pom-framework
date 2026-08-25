@@ -20,10 +20,18 @@ reports/allure-results/*
 !reports/allure-report/
 reports/allure-report/*
 !reports/allure-report/.gitkeep
+reports/auth-state/*
+!reports/auth-state/.gitkeep
+auth/storage_state.json
+auth/*.tmp.json
+reports/diagnostics/*
+!reports/diagnostics/.gitkeep
 screenshots/*
 !screenshots/.gitkeep
 traces/*
 !traces/.gitkeep
+videos/*
+!videos/.gitkeep
 
 # IDE
 .vscode/

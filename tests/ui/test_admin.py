@@ -1,4 +1,5 @@
 import allure
+import pytest
 
 from pages.admin_page import AdminPage
 from pages.dashboard_page import DashboardPage
@@ -10,6 +11,10 @@ from utils.console_reporter import print_test_step
 @allure.severity(allure.severity_level.CRITICAL)
 @allure.feature("User Management")
 @allure.story("Admin System User Search")
+@pytest.mark.ui
+@pytest.mark.regression
+@pytest.mark.e2e
+@pytest.mark.critical
 def test_admin_user_search_and_open_add_user(logged_in_page, user_data):
     """Search for the configured System User and open the Add User form."""
     admin_page = AdminPage(logged_in_page)

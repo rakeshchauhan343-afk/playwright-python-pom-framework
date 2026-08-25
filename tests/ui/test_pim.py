@@ -1,4 +1,5 @@
 import allure
+import pytest
 
 from pages.pim_page import PimPage
 from utils.console_reporter import print_test_step
@@ -12,13 +13,19 @@ logger = get_logger(__name__)
 @allure.severity(allure.severity_level.CRITICAL)
 @allure.feature("PIM")
 @allure.story("Employee deletion")
-def test_admin_can_delete_employee_from_pim(logged_in_page):
+@pytest.mark.ui
+@pytest.mark.pim
+@pytest.mark.regression
+@pytest.mark.e2e
+@pytest.mark.critical
+@pytest.mark.destructive
+def test_admin_can_delete_employee_from_pim(authenticated_page):
     """Delete the first available employee and verify the deletion."""
-    pim_page = PimPage(logged_in_page)
+    pim_page = PimPage(authenticated_page)
 
     with allure.step("Step 1 - Login to OrangeHRM"):
         print_test_step(1, "Login")
-        logger.info("Login completed through the shared logged_in_page fixture")
+        logger.info("Authentication completed through the storage-state fixture")
 
     with allure.step("Step 2 - Open PIM"):
         print_test_step(2, "Open PIM")
