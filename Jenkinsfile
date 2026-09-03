@@ -3,12 +3,6 @@ pipeline {
 
     stages {
 
-        stage('Checkout') {
-            steps {
-                echo 'Code is already checked out by Jenkins'
-            }
-        }
-
         stage('Install Dependencies') {
             steps {
                 bat 'python -m pip install --upgrade pip'
@@ -22,6 +16,26 @@ pipeline {
             }
         }
 
+        stage('Create Environment') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'orangehrm-credentials',
+                        usernameVariable: 'ORANGEHRM_USER',
+                        passwordVariable: 'ORANGEHRM_PASS'
+                    )
+                ]) {
+                    powershell '''
+                        @"
+ORANGEHRM_URL=https://opensource-demo.orangehrmlive.com/
+ORANGEHRM_USERNAME=$env:ORANGEHRM_USER
+ORANGEHRM_PASSWORD=$env:ORANGEHRM_PASS
+"@ | Set-Content .env
+                    '''
+                }
+            }
+        }
+
         stage('Run Tests') {
             steps {
                 bat 'pytest'
@@ -31,6 +45,7 @@ pipeline {
 
     post {
         always {
+            bat 'if exist .env del /f /q .env'
             echo 'Test execution completed'
         }
     }
