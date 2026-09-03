@@ -27,7 +27,7 @@ pipeline {
                 ]) {
                     powershell '''
                         @"
-ORANGEHRM_URL=https://opensource-demo.orangehrmlive.com/
+ORANGEHRM_URL=https://opensource-demo.orangehrmlive.com/web/index.php/auth/login
 ORANGEHRM_USERNAME=$env:ORANGEHRM_USER
 ORANGEHRM_PASSWORD=$env:ORANGEHRM_PASS
 "@ | Set-Content .env
