@@ -16,10 +16,10 @@ class LoginPage(BasePage):
         return self.page.get_by_role("heading", name="Login", exact=True)
 
     def username_input(self):
-        return self.page.get_by_placeholder(self.USERNAME_PLACEHOLDER, exact=True)
+        return self.page.locator("input[name='username']")
 
     def password_input(self):
-        return self.page.get_by_placeholder(self.PASSWORD_PLACEHOLDER, exact=True)
+        return self.page.locator("input[name='password']")
 
     def login_button(self):
         return self.page.get_by_role("button", name=self.LOGIN_BUTTON_NAME, exact=True)

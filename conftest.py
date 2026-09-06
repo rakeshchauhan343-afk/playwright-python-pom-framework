@@ -297,6 +297,10 @@ def auth_state(request: pytest.FixtureRequest, browser: Browser) -> Path:
     base_url = request.config.getoption("--pom-base-url") or get_base_url()
 
     refresh_requested = request.config.getoption("--pom-refresh-auth")
+    api_test = request.node.get_closest_marker("api") is not None
+    if api_test and not refresh_requested and state_path.is_file():
+        logger.info("Reusing stored authentication for API test: %s", state_path)
+        return state_path
     if not refresh_requested and _auth_state_is_valid(browser, base_url, state_path):
         logger.info("Reusing authenticated browser state: %s", state_path)
         return state_path
@@ -583,7 +587,7 @@ def _auth_state_is_valid(browser: Browser, base_url: str, state_path: Path) -> b
         )
         validation_context.set_default_timeout(get_timeout())
         validation_page = validation_context.new_page()
-        validation_page.goto(base_url, wait_until="domcontentloaded")
+        validation_page.goto(base_url, wait_until="commit")
         DashboardPage(validation_page).expect_loaded()
         return True
     except Exception as error:
@@ -602,7 +606,7 @@ def _create_auth_state(browser: Browser, base_url: str, state_path: Path) -> Non
     try:
         auth_page = auth_context.new_page()
         with allure.step("Generate authenticated Playwright storage state"):
-            LoginPage(auth_page).open(base_url)
+            auth_page.goto(base_url, wait_until="commit")
             LoginPage(auth_page).login(ORANGEHRM_USERNAME, ORANGEHRM_PASSWORD)
             DashboardPage(auth_page).expect_loaded()
             auth_context.storage_state(path=str(temporary_path))
