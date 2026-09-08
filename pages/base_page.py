@@ -12,7 +12,7 @@ class BasePage:
         self.page = page
 
     def navigate(self, url: str) -> None:
-        self.page.goto(url, wait_until="domcontentloaded")
+        self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
 
     def click(self, selector: str) -> None:
         self.page.locator(selector).click()
