@@ -1,6 +1,15 @@
 application:
   base_url: "https://opensource-demo.orangehrmlive.com/"
   timeout: 10000
+environments:
+  demo:
+    base_url: ""
+  qa:
+    base_url: ""
+  uat:
+    base_url: ""
+  staging:
+    base_url: ""
 browser:
   name: "chromium"
   headless: true

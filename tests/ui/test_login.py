@@ -1,4 +1,6 @@
 import allure
+import pytest
+from playwright.sync_api import expect
 
 from pages.dashboard_page import DashboardPage
 from pages.login_page import LoginPage
@@ -6,11 +8,44 @@ from config.settings import ORANGEHRM_PASSWORD, ORANGEHRM_URL, ORANGEHRM_USERNAM
 from utils.console_reporter import mask_secret, print_test_header, print_test_step
 
 
+@allure.title("OrangeHRM login page controls are available")
+@allure.description("Verify the OrangeHRM login page displays its expected controls.")
+@allure.severity(allure.severity_level.NORMAL)
+@allure.feature("Authentication")
+@allure.story("OrangeHRM Login")
+@pytest.mark.ui
+@pytest.mark.login
+@pytest.mark.smoke
+@pytest.mark.sanity
+def test_login_page_controls_are_available(page):
+    """Verify the login page heading, controls, and recovery link."""
+    print_test_header("OrangeHRM login page controls are available")
+    login_page = LoginPage(page)
+
+    with allure.step("Open OrangeHRM login page"):
+        login_page.open(ORANGEHRM_URL)
+        print_test_step(1, f"Open URL: {page.url}")
+
+    with allure.step("Verify login page controls"):
+        expect(login_page.login_heading()).to_be_visible()
+        expect(login_page.username_input()).to_be_visible()
+        expect(login_page.password_input()).to_be_visible()
+        expect(login_page.login_button()).to_be_visible()
+        expect(login_page.login_button()).to_be_enabled()
+        expect(login_page.forgot_password_link()).to_be_visible()
+        print_test_step(2, "Verify login page controls are visible and enabled")
+
+
 @allure.title("OrangeHRM user can log in")
 @allure.description("Verify a valid OrangeHRM user reaches the Dashboard.")
 @allure.severity(allure.severity_level.CRITICAL)
 @allure.feature("Authentication")
 @allure.story("OrangeHRM Login")
+@pytest.mark.ui
+@pytest.mark.login
+@pytest.mark.smoke
+@pytest.mark.critical
+@pytest.mark.e2e
 def test_user_can_log_in_to_orangehrm(page):
     """Verify a valid OrangeHRM user reaches the Dashboard."""
     print_test_header("OrangeHRM user can log in")

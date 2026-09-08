@@ -48,7 +48,8 @@ function Invoke-AllureGenerate {
     }
 
     Ensure-ReportDirectories
-    & allure generate reports/allure-results -o reports/allure-report --clean
+    Remove-Item reports/allure-report/* -Recurse -Force -ErrorAction SilentlyContinue
+    & allure generate reports/allure-results -o reports/allure-report
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Allure report generation failed with exit code $LASTEXITCODE." -ForegroundColor Red
     }

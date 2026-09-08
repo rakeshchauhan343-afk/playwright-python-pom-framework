@@ -1,6 +1,8 @@
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
-from playwright.sync_api import Page, expect
+from playwright.sync_api import Page, Response, expect
 
 
 class BasePage:
@@ -35,3 +37,13 @@ class BasePage:
 
     def current_url(self) -> str:
         return self.page.url
+
+    def wait_for_response(
+        self,
+        url_or_predicate: str | Callable[[Response], bool],
+        action: Callable[[], Any],
+        timeout: float = 10_000,
+    ) -> Response:
+        with self.page.expect_response(url_or_predicate, timeout=timeout) as response_info:
+            action()
+        return response_info.value
